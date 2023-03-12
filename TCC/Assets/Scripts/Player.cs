@@ -1,121 +1,116 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Tilemaps;
 
 public class Player : MonoBehaviour
 {
-    public float moveSpeed;
-    public float acceleration;
-    public float decceleration;
-    public float velPower;
+    public float playerSpeed;
+    public float playerJumpForce;
 
-    public float crouchSpeed;
-    public bool isCrouching;
+    public bool playerIsJumping;
+    public bool playerIsDoubleJumping;
 
-    // public float frictionAmount;
+    private Rigidbody2D myRigidbody2D;
+    private Animator myAnimator;
 
-    public float jumpForce;
-    public bool isJumping;
-    public float jumpCutMultiplier;
-    public float gravityScale;
-    public float fallGravityMultipler;
+    bool playerIsFloating;
 
-    public Rigidbody2D rb;
-    public BoxCollider2D bc;
-    public SpriteRenderer sr;
-    public Transform groundCheckPoint;
-    public Vector2 groundCheckSize;
-    public Transform cellingCheckPoint;
-    public Vector2 cellingCheckSize;
-    public LayerMask groundLayer;
-
+    void Start()
+    {
+        myRigidbody2D = GetComponent<Rigidbody2D>();
+        myAnimator = GetComponent<Animator>();
+    }
 
     void Update()
     {
-        
-    }
-
-    void FixedUpdate()
-    {
         Move();
-
-        if(Input.GetKey(KeyCode.S) || Physics2D.OverlapBox(cellingCheckPoint.position, cellingCheckSize, 0, groundLayer)){
-            Crouch();
-        } else {
-            moveSpeed = 10;
-            bc.enabled = true;
-        }
-
-        if(Input.GetButtonDown("Jump") && !isJumping){
-            Jump();
-            isJumping = false;
-        }
-        OnJumpUp();
-        JumpGravity();
+        Jump();
     }
 
     void Move()
     {
-        // movimentação básica (sem aceleração)
-        // float moveDirection = Input.GetAxis("Horizontal");
-        // rb.velocity = new Vector2(moveDirection * moveSpeed, rb.velocity.y);
+        // Vector3 movement = new Vector3(Input.GetAxis("Horizontal"), 0, 0);
+        // transform.position += movement * Time.deltaTime * playerSpeed;
+        // jeito muito básico
 
-        float moveDirection = Input.GetAxis("Horizontal");
-        float targetSpeed = moveDirection * moveSpeed;
-        float speedDif = targetSpeed - rb.velocity.x;
-        float accelRate = (Mathf.Abs(targetSpeed) > 0.01f) ? acceleration : decceleration;
-        float movement = Mathf.Pow(Mathf.Abs(speedDif) * accelRate, velPower) * Mathf.Sign(speedDif);
-        rb.AddForce(movement * Vector2.right);
+        float movement = Input.GetAxis("Horizontal");
+        myRigidbody2D.velocity = new Vector2(movement * playerSpeed, myRigidbody2D.velocity.y);
 
-        if(moveDirection > 0){
-            sr.flipX = false;
-        } else if(moveDirection < 0){
-            sr.flipX = true;
-        }
-    }
-
-    void Crouch()
-    {
-        moveSpeed = crouchSpeed;
-        bc.enabled = false;
-        if(Physics2D.OverlapBox(cellingCheckPoint.position, cellingCheckSize, 0, groundLayer)){
-            Debug.Log("Hi mom");
+        if(movement > 0){
+            myAnimator.SetBool("Walk", true);
+            transform.eulerAngles = new Vector3(0, 0, 0);
+        } else if(movement < 0){
+            myAnimator.SetBool("Walk", true);
+            transform.eulerAngles = new Vector3(0, 180, 0);
+        } else {
+            myAnimator.SetBool("Walk", false);
         }
     }
 
     void Jump()
     {
-        if(Physics2D.OverlapBox(groundCheckPoint.position, groundCheckSize, 0, groundLayer)){
-            rb.AddForce(Vector2.up * jumpForce, ForceMode2D.Impulse);
-            // lastGroundedTime = 0;
-            // lastJumpTime = 0;
-            isJumping = true;
-            // jumpInputReleased = false;
+        if(Input.GetButtonDown("Jump") && !playerIsFloating){
+            if(!playerIsJumping){
+                myRigidbody2D.AddForce(new Vector2(0, playerJumpForce), ForceMode2D.Impulse);
+                playerIsDoubleJumping = true;
+                myAnimator.SetBool("Jump", true);
+            } else {
+                if(playerIsDoubleJumping){
+                    myRigidbody2D.AddForce(new Vector2(0, playerJumpForce), ForceMode2D.Impulse);
+                    playerIsDoubleJumping = false;
+                }
+            }
         }
     }
 
-    void OnJumpUp()
+    void OnCollisionEnter2D(Collision2D collision)
     {
-        if(rb.velocity.y > 0 && isJumping){
-            rb.AddForce(Vector2.down * rb.velocity.y * (1 - jumpCutMultiplier), ForceMode2D.Impulse);
+        if(collision.gameObject.layer == 8){
+            playerIsJumping = false;
+            myAnimator.SetBool("Jump", false);
+        }
+        
+        if(collision.gameObject.tag == "Spike" || collision.gameObject.tag == "Saw"){
+            GameLogicManager.instance.GameOver();
+            Destroy(gameObject);
         }
     }
 
-    void JumpGravity()
+    void OnCollisionStay2D(Collision2D collision)
     {
-        if(rb.velocity.y < 0){
-            rb.gravityScale = gravityScale * fallGravityMultipler;
-        } else {
-            rb.gravityScale = gravityScale;
+         if(collision.gameObject.tag == "Platform" && Input.GetKey(KeyCode.S)){
+            collision.gameObject.layer = 12;
+            collision.gameObject.GetComponent<TilemapCollider2D>().isTrigger = true;
         }
     }
 
-    // void Friction()
-    // {
-    //     if(lastGroundedTime > 0 && Mathf.Abs(InputHandler.instance.MoveInput) < 0.01f){
-    //         float amount = Mathf.Min(Mathf.Abs(rb.velocity.x), Mathf.Abs(frictionAmount));
-    //         amount *= Mathf.Sign(rb.velocity.x);
-    //         rb.AddForce(Vector2.right * -amount, ForceMode2D.Impulse);
-    //     }
-    // }
+    void OnCollisionExit2D(Collision2D collision)
+    {
+        if(collision.gameObject.layer == 8){
+            playerIsJumping = true;
+        }
+    }
+
+    void OnTriggerStay2D(Collider2D collider){
+        if(collider.gameObject.layer == 11){
+            playerIsFloating = true;
+        }
+    }
+
+    void OnTriggerExit2D(Collider2D collider){
+        if(collider.gameObject.layer == 11){
+            playerIsFloating = false;
+        }
+
+        if(collider.gameObject.layer == 12){
+            float timer = 0;
+            while(timer < 1){
+                timer += 1 * Time.deltaTime;
+            }
+
+            collider.gameObject.GetComponent<TilemapCollider2D>().isTrigger = false;
+            collider.gameObject.layer = 8;
+        }
+    }
 }
